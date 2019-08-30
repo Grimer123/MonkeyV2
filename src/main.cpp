@@ -218,6 +218,8 @@ struct CNodeState {
     uint256 hashLastUnknownBlock;
     //! The last full block we both have.
     CBlockIndex* pindexLastCommonBlock;
+    //! The best header we have sent our peer.
+    const CBlockIndex *pindexBestHeaderSent;
     //! Whether we've started headers synchronization with this peer.
     bool fSyncStarted;
     //! Since when we're stalling block download progress (in microseconds), or 0.
@@ -4709,7 +4711,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
     }
 
 
-    else if (strCommand == "getblocks" || strCommand == "getheaders") {
+    else if (strCommand == "getblocks") {
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
@@ -4740,8 +4742,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
     }
 
-
-    else if (strCommand == "headers" && Params().HeadersFirstSyncingActive()) {
+// adding support for get headers
+    else if (strCommand == "getheaders") {
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
@@ -4750,8 +4752,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
         if (IsInitialBlockDownload())
             return true;
+        CNodeState *nodestate = State(pfrom->GetId());
 
-        CBlockIndex* pindex = NULL;
+        const CBlockIndex* pindex = NULL;
         if (locator.IsNull()) {
             // If locator is null, return the hashStop block
             BlockMap::iterator mi = mapBlockIndex.find(hashStop);
@@ -4766,6 +4769,39 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         }
 
         // we must use CBlocks, as CBlockHeaders won't include the 0x00 nTx count at the end
+        std::vector<CBlock> vHeaders;
+        int nLimit = MAX_HEADERS_RESULTS;
+        if (fDebug)
+            LogPrintf("getheaders %d to %s from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.ToString(), pfrom->id);
+        for (; pindex; pindex = chainActive.Next(pindex)) {
+            vHeaders.push_back(pindex->GetBlockHeader());
+            if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
+                break;
+        }
+        nodestate->pindexBestHeaderSent = pindex ? pindex : chainActive.Tip();
+        pfrom->PushMessage("headers", vHeaders);
+    }
+    else if (strCommand == "headers" && Params().HeadersFirstSyncingActive()) {
+        CBlockLocator locator;
+        uint256 hashStop;
+        vRecv >> locator >> hashStop;
+        LOCK(cs_main);
+        if (IsInitialBlockDownload())
+            return true;
+        CBlockIndex* pindex = NULL;
+        if (locator.IsNull()) {
+            // If locator is null, return the hashStop block
+            BlockMap::iterator mi = mapBlockIndex.find(hashStop);
+            if (mi == mapBlockIndex.end())
+                return true;
+            pindex = (*mi).second;
+        } else {
+            // Find the last block the caller has in the main chain
+            pindex = FindForkInGlobalIndex(chainActive, locator);
+            if (pindex)
+                pindex = chainActive.Next(pindex);
+        }
+        // we must use CBlocks, as CBlockHeaders won't include the 0x00 nTx count at the end
         vector<CBlock> vHeaders;
         int nLimit = MAX_HEADERS_RESULTS;
         if (fDebug)
@@ -4776,6 +4812,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 break;
         }
         pfrom->PushMessage("headers", vHeaders);
+
     }
 
 
