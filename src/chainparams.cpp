@@ -296,8 +296,7 @@ public:
         nMinerThreads = 1;
         nTargetTimespan = 24 * 60 * 60; // Monkey: 1 day
         nTargetSpacing = 1 * 60;        // Monkey: 1 minutes
-        bnProofOfWorkLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        nMinimumChainWork = uint256S("0x00");
+        bnProofOfWorkLimit = ~uint256(0) >> 1;
        	nLastPOWBlock = 250;
     	nMaturity = 10;
         genesis.nTime = 1532542535;
