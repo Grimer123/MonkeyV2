@@ -209,57 +209,6 @@ UniValue gethashespersec(const UniValue& params, bool fHelp)
         return (int64_t)0;
     return (int64_t)dHashesPerSec;
 }
-
-UniValue generateBlocks(boost::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript) 
-{ 
-    static const int nInnerLoopCount = 0x10000; 
-    int nHeightStart = 0; 
-    int nHeightEnd = 0; 
-    int nHeight = 0; 
-
-    {   // Don't keep cs_main locked 
-        LOCK(cs_main); 
-        nHeightStart = chainActive.Height(); 
-        nHeight = nHeightStart; 
-        nHeightEnd = nHeightStart+nGenerate; 
-    } 
-    unsigned int nExtraNonce = 0; 
-    UniValue blockHashes(UniValue::VARR); 
-    while (nHeight < nHeightEnd) 
-    { 
-        unique_ptr<CBlockTemplate> pblocktemplate(CreateNewBlockWithKey(reservekey, pwalletMain, false));
-        if (!pblocktemplate.get()) 
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block"); 
-        CBlock *pblock = &pblocktemplate->block; 
-        { 
-            LOCK(cs_main); 
-            IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce); 
-        } 
-        while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) { 
-            ++pblock->nNonce; 
-            --nMaxTries; 
-        } 
-        if (nMaxTries == 0) { 
-            break; 
-        } 
-        if (pblock->nNonce == nInnerLoopCount) { 
-            continue; 
-        } 
-        std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(*pblock); 
-        if (!ProcessNewBlock(Params(), shared_pblock, true, NULL)) 
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted"); 
-        ++nHeight; 
-        blockHashes.push_back(pblock->GetHash().GetHex()); 
-
-        //mark script as important because it was used at least for one coinbase output if the script came from the wallet 
-        if (keepScript) 
-        { 
-            coinbaseScript->KeepScript(); 
-        } 
-    } 
-    return blockHashes; 
-} 
-
 #endif
 
 UniValue getmininginfo(const UniValue& params, bool fHelp)
